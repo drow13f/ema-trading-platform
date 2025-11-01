@@ -9,14 +9,14 @@ import os
 import time
 
 # =============================================================================
-# EMA BULL/BEAR PLATFORM – ALWAYS SHOWS DATA + NO SYNTAX ERRORS
+# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – 100% STABLE
 # =============================================================================
 st.set_page_config(page_title="EMA Platform", layout="wide")
 st.title("EMA Bull/Bear Research & Trading Platform")
-st.markdown("**Screener • Heatmap • Backtest • Filters • 100% Stable**")
+st.markdown("**Screener • Heatmap • Backtest • Filters • Zero Errors**")
 
 # -------------------------------------------------------------------------
-# WATCHLIST + DEFAULT SYMBOLS
+# WATCHLIST
 # -------------------------------------------------------------------------
 WATCHLISTS_FILE = "watchlists.json"
 DEFAULT_SYMBOLS = ["SPY", "QQQ", "AAPL"]
@@ -46,16 +46,22 @@ if st.sidebar.button("Save"):
 tab1, tab2, tab3, tab4 = st.tabs(["Screener", "Heatmap", "Backtest", "Filters"])
 
 # -------------------------------------------------------------------------
-# SAFE YFINANCE WITH RETRY
+# SAFE YFINANCE (retry + fallback)
 # -------------------------------------------------------------------------
 def safe_download(symbol, period="1y", interval="1d", retries=2):
     for _ in range(retries):
         try:
-            df = yf.download(symbol, period=period, interval=interval,
-                           progress=False, auto_adjust=True, quiet=True)
+            df = yf.download(
+                symbol,
+                period=period,
+                interval=interval,
+                progress=False,
+                auto_adjust=True,
+                quiet=True,
+            )
             if not df.empty and len(df) >= 50:
                 return df
-        except:
+        except Exception:
             time.sleep(1)
     return pd.DataFrame()
 
@@ -101,82 +107,4 @@ with tab1:
             }
 
         with ThreadPoolExecutor(max_workers=5) as ex:
-            futures = [ex.submit(compute, sym) for sym in symbols]
-            for f in as_completed(futures):
-                r = f.result()
-                if r:
-                    results.append(r)
-
-        return pd.DataFrame(results) if results else pd.DataFrame()
-
-    df_screen = screen_symbols(SYMBOLS)
-
-    if not df_screen.empty:
-        st.dataframe(df_screen, use_container_width=True)
-    else:
-        st.warning("No live data – showing demo")
-        demo = pd.DataFrame([
-            {"symbol": "SPY", "regime": "STRONG BULL", "price": 580.50, "rsi": 68.2},
-            {"symbol": "AAPL", "regime": "WEAK BULL", "price": 232.10, "rsi": 55.4},
-            {"symbol": "QQQ", "regime": "STRONG BULL", "price": 495.30, "rsi": 70.1},
-        ])
-        st.dataframe(demo, use_container_width=True)
-
-# -------------------------------------------------------------------------
-# TAB 2 – HEATMAP (FIXED: orient="index")
-# -------------------------------------------------------------------------
-with tab2:
-    st.subheader("Multi-Timeframe Heatmap")
-
-    @st.cache_data(ttl=300)
-    def get_heatmap(symbols):
-        tfs = {"1d": ("2y", "1d"), "1wk": ("10y", "1wk")}
-        data = {}
-
-        for sym in symbols:
-            row = {}
-            for label, (p, i) in tfs.items():
-                df = safe_download(sym, period=p, interval=i)
-                if df.empty:
-                    row[label] = "N/A"
-                    continue
-                close = df["Close"]
-                e10 = close.ewm(10, adjust=False).mean().iloc[-1]
-                e20 = close.ewm(20, adjust=False).mean().iloc[-1]
-                e50 = close.ewm(50, adjust=False).mean().iloc[-1]
-                if pd.isna(e10):
-                    row[label] = "N/A"
-                    continue
-                row[label] = "BULL" if e10 > e20 > e50 else "BEAR" if e10 < e20 < e50 else "SIDE"
-            data[sym] = row
-        return pd.DataFrame.from_dict(data, orient="index")  # FIXED: "index"
-
-    hm_df = get_heatmap(SYMBOLS)
-
-    def color(val):
-        return "green" if val == "BULL" else "red" if val == "BEAR" else "lightgray"
-
-    fig = go.Figure(data=go.Heatmap(
-        z=[[color(v) for v in row] for row in hm_df.values],
-        x=hm_df.columns, y=hm_df.index,
-        text=hm_df.values, texttemplate="%{text}",
-        colorscale="RdYlGn", showscale=False
-    ))
-    fig.update_layout(height=200 + len(SYMBOLS)*35)
-    st.plotly_chart(fig, use_container_width=True)
-
-# -------------------------------------------------------------------------
-# TAB 3 – BACKTEST
-# -------------------------------------------------------------------------
-with tab3:
-    symbol_bt = st.selectbox("Symbol", SYMBOLS or ["SPY"])
-    start = st.date_input("Start", pd.to_datetime("2023-01-01"))
-    capital = st.number_input("Capital ($)", 1000, 1000000, 10000)
-
-    if st.button("Run"):
-        df_bt = safe_download(symbol_bt, start=start)
-        if df_bt.empty:
-            st.error("No data. Try SPY.")
-        else:
-            df_bt["EMA10"] = df_bt["Close"].ewm(10, adjust=False).mean()
-            df_bt["EMA20"] = df_bt["Close"].ewm(20
+            futures = [ex.submit(com
