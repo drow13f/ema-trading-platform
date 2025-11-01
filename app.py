@@ -9,15 +9,15 @@ import os
 import time
 
 # =============================================================================
-# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – REGIME SELECTIONS IN SCREENER TAB
+# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – REGIME-BASED SORTING
 # =============================================================================
 # Research Date: October 31, 2025
-# Features: Regime selections moved to Screener tab for filtering/sorting
+# Features: Regime sorting/filtering with EMA, RSI, rel_vol conditions
 # GitHub-ready: Clean, commented, stable
 
 st.set_page_config(page_title="EMA Platform", layout="wide")
 st.title("EMA Bull/Bear Research & Trading Platform")
-st.markdown("**Screener • Heatmap • Backtest • Filters • Regime Selections**")
+st.markdown("**Screener • Heatmap • Backtest • Filters • Regime Sorting**")
 
 # -------------------------------------------------------------------------
 # WATCHLIST MANAGEMENT
@@ -34,7 +34,7 @@ with open(WATCHLISTS_FILE) as f:
 
 SYMBOLS = watchlists.get("default", DEFAULT_SYMBOLS)
 
-# Sidebar – Watchlist Editor (regime buttons moved to Screener tab)
+# Sidebar – Watchlist Editor + Regime Buttons
 st.sidebar.header("Watchlist")
 new_symbols = st.sidebar.text_area("Edit (comma-separated)", ", ".join(SYMBOLS), height=100)
 if st.sidebar.button("Save Watchlist"):
@@ -43,6 +43,25 @@ if st.sidebar.button("Save Watchlist"):
         json.dump(watchlists, f)
     st.sidebar.success("Saved!")
     st.rerun()
+
+st.sidebar.header("Regime Sort/Filter")
+# Buttons to filter screener by regime
+if st.sidebar.button("🟢 Strong Bull"):
+    st.session_state.regime_filter = "STRONG BULL"
+if st.sidebar.button("🟡 Bull"):
+    st.session_state.regime_filter = "BULL"
+if st.sidebar.button("🟠 Weak Bull"):
+    st.session_state.regime_filter = "WEAK BULL"
+if st.sidebar.button("⚪ Neutral/Alert"):
+    st.session_state.regime_filter = "NEUTRAL/ALERT"
+if st.sidebar.button("🟤 Weak Bear"):
+    st.session_state.regime_filter = "WEAK BEAR"
+if st.sidebar.button("🔴 Bear"):
+    st.session_state.regime_filter = "BEAR"
+if st.sidebar.button("⚫ Strong Bear"):
+    st.session_state.regime_filter = "STRONG BEAR"
+if st.sidebar.button("❌ Clear Filter"):
+    st.session_state.regime_filter = None
 
 # -------------------------------------------------------------------------
 # TABS FOR PLATFORM FEATURES
@@ -70,26 +89,9 @@ def safe_download(symbol, period="1y", interval="1d", retries=2):
     return pd.DataFrame()
 
 # -------------------------------------------------------------------------
-# TAB 1 – SCREENER (with regime selections/buttons inside the tab)
+# TAB 1 – SCREENER (regime sorting + filtering)
 # -------------------------------------------------------------------------
 with tab1:
-    st.subheader("Regime Selections")
-    cols = st.columns(7)  # Arrange buttons in columns for better layout
-    regimes = [
-        ("🟢 Strong Bull", "STRONG BULL"),
-        ("🟡 Bull", "BULL"),
-        ("🟠 Weak Bull", "WEAK BULL"),
-        ("⚪ Neutral/Alert", "NEUTRAL/ALERT"),
-        ("🟤 Weak Bear", "WEAK BEAR"),
-        ("🔴 Bear", "BEAR"),
-        ("⚫ Strong Bear", "STRONG BEAR")
-    ]
-    for idx, (label, value) in enumerate(regimes):
-        if cols[idx].button(label):
-            st.session_state.regime_filter = value
-    if st.button("❌ Clear Filter"):
-        st.session_state.regime_filter = None
-
     @st.cache_data(ttl=60)
     def screen_symbols(symbols):
         results = []
@@ -166,7 +168,7 @@ with tab1:
             "BEAR": 5,
             "STRONG BEAR": 6
         }
-        df['regime_sort'] = df['regime'].map(regime_order)
+        df['regime_sort'] = df['regime'].map(regime_order).fillna(3)  # Fallback to neutral for unknown regimes
         df = df.sort_values('regime_sort').drop('regime_sort', axis=1)
         return df
 
