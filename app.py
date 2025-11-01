@@ -9,11 +9,10 @@ import os
 import time
 
 # =============================================================================
-# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – REGIME-BASED SORTING
+# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – OPTIMIZED CACHING
 # =============================================================================
 # Research Date: October 31, 2025
-# Features: Regime sorting/filtering with EMA, RSI, rel_vol conditions
-# GitHub-ready: Clean, commented, stable
+# Optimizations: Separate data caching, TTL tuning, safe sorting, reduced threads
 
 st.set_page_config(page_title="EMA Platform", layout="wide")
 st.title("EMA Bull/Bear Research & Trading Platform")
@@ -45,7 +44,6 @@ if st.sidebar.button("Save Watchlist"):
     st.rerun()
 
 st.sidebar.header("Regime Sort/Filter")
-# Buttons to filter screener by regime
 if st.sidebar.button("🟢 Strong Bull"):
     st.session_state.regime_filter = "STRONG BULL"
 if st.sidebar.button("🟡 Bull"):
@@ -69,8 +67,12 @@ if st.sidebar.button("❌ Clear Filter"):
 tab1, tab2, tab3, tab4 = st.tabs(["Screener", "Heatmap", "Backtest", "Filters"])
 
 # -------------------------------------------------------------------------
-# SAFE DATA DOWNLOAD (retry logic for stability)
+# SAFE DATA DOWNLOAD (cached for reuse)
 # -------------------------------------------------------------------------
+@st.cache_data(ttl=60, hash_funcs={pd.DataFrame: lambda _: None})
+def cached_download(symbol, period="1y", interval="1d"):
+    return safe_download(symbol, period, interval)
+
 def safe_download(symbol, period="1y", interval="1d", retries=2):
     for _ in range(retries):
         try:
@@ -89,15 +91,15 @@ def safe_download(symbol, period="1y", interval="1d", retries=2):
     return pd.DataFrame()
 
 # -------------------------------------------------------------------------
-# TAB 1 – SCREENER (regime sorting + filtering)
+# TAB 1 – SCREENER (optimized computation)
 # -------------------------------------------------------------------------
 with tab1:
-    @st.cache_data(ttl=60)
+    @st.cache_data(ttl=60, hash_funcs={pd.DataFrame: lambda _: None})
     def screen_symbols(symbols):
         results = []
 
         def compute(sym):
-            df = safe_download(sym)
+            df = cached_download(sym)
             if df.empty:
                 return None
 
@@ -150,26 +152,27 @@ with tab1:
                 "rel_vol": round(rel_vol, 2),
             }
 
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            futures = [ex.submit(compute, sym) for sym in SYMBOLS]
+        with ThreadPoolExecutor(max_workers=3) as ex:  # Reduced threads for faster caching
+            futures = [ex.submit(compute, sym) for sym in symbols]
             for f in as_completed(futures):
                 r = f.result()
                 if r:
                     results.append(r)
 
         df = pd.DataFrame(results) if results else pd.DataFrame()
-        # Sort by regime order
-        regime_order = {
-            "STRONG BULL": 0,
-            "BULL": 1,
-            "WEAK BULL": 2,
-            "NEUTRAL/ALERT": 3,
-            "WEAK BEAR": 4,
-            "BEAR": 5,
-            "STRONG BEAR": 6
-        }
-        df['regime_sort'] = df['regime'].map(regime_order)
-        df = df.sort_values('regime_sort').drop('regime_sort', axis=1)
+        if not df.empty:
+            # Sort by regime order
+            regime_order = {
+                "STRONG BULL": 0,
+                "BULL": 1,
+                "WEAK BULL": 2,
+                "NEUTRAL/ALERT": 3,
+                "WEAK BEAR": 4,
+                "BEAR": 5,
+                "STRONG BEAR": 6
+            }
+            df['regime_sort'] = df['regime'].map(regime_order).fillna(3)  # Safe for unknown regimes
+            df = df.sort_values('regime_sort').drop('regime_sort', axis=1)
         return df
 
     df_screen = screen_symbols(SYMBOLS)
@@ -190,12 +193,12 @@ with tab1:
         st.dataframe(demo, use_container_width=True)
 
 # -------------------------------------------------------------------------
-# TAB 2 – HEATMAP
+# TAB 2 – HEATMAP (cached separately)
 # -------------------------------------------------------------------------
 with tab2:
     st.subheader("Multi-Timeframe Heatmap")
 
-    @st.cache_data(ttl=300)
+    @st.cache_data(ttl=300, hash_funcs={pd.DataFrame: lambda _: None})
     def get_heatmap(symbols):
         tfs = {"1d": ("2y", "1d"), "1wk": ("10y", "1wk")}
         data = {}
@@ -203,7 +206,7 @@ with tab2:
         for sym in symbols:
             row = {}
             for label, (p, i) in tfs.items():
-                df = safe_download(sym, period=p, interval=i)
+                df = cached_download(sym, period=p, interval=i)
                 if df.empty:
                     row[label] = "N/A"
                     continue
@@ -241,7 +244,7 @@ with tab3:
     capital = st.number_input("Capital ($)", 1000, 1000000, 10000)
 
     if st.button("Run"):
-        df_bt = safe_download(symbol_bt, start=start)
+        df_bt = cached_download(symbol_bt, start=start)
         if df_bt.empty:
             st.error("No data. Try SPY.")
         else:
@@ -300,4 +303,4 @@ with tab4:
     else:
         st.info("Run **Screener** tab first.")
 
-st.caption("Data: Yahoo Finance • Built with Streamlit • 100% Stable")
+st.caption("Data: Yahoo Finance • Built with Streamlit • Optimized Caching")
