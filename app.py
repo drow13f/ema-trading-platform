@@ -9,7 +9,7 @@ import os
 import time
 
 # =============================================================================
-# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – 100% STABLE
+# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – FIXED & STABLE
 # =============================================================================
 st.set_page_config(page_title="EMA Platform", layout="wide")
 st.title("EMA Bull/Bear Research & Trading Platform")
@@ -81,30 +81,4 @@ with tab1:
             close = df["Close"]
             ema10 = close.ewm(span=10, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
-            ema50 = close.ewm(span=50, adjust=False).mean()
-            rsi_val = RSIIndicator(close).rsi().iloc[-1]
-
-            e10 = ema10.iloc[-1]
-            e20 = ema20.iloc[-1]
-            e50 = ema50.iloc[-1]
-
-            if pd.isna(e10) or pd.isna(e20) or pd.isna(e50):
-                return None
-
-            regime = (
-                "STRONG BULL" if e10 > e20 > e50 else
-                "WEAK BULL" if e10 > e20 else
-                "STRONG BEAR" if e10 < e20 < e50 else
-                "WEAK BEAR" if e10 < e20 else
-                "SIDEWAYS"
-            )
-
-            return {
-                "symbol": sym,
-                "regime": regime,
-                "price": round(close.iloc[-1], 2),
-                "rsi": round(rsi_val, 1) if not pd.isna(rsi_val) else "N/A",
-            }
-
-        with ThreadPoolExecutor(max_workers=5) as ex:
-            futures = [ex.submit(com
+            ema50 = close
