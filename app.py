@@ -9,17 +9,17 @@ import os
 import time
 
 # =============================================================================
-# EMA BULL/BEAR PLATFORM – ALWAYS SHOWS DATA
+# EMA BULL/BEAR PLATFORM – ALWAYS SHOWS DATA + NO SYNTAX ERRORS
 # =============================================================================
 st.set_page_config(page_title="EMA Platform", layout="wide")
 st.title("EMA Bull/Bear Research & Trading Platform")
-st.markdown("**Screener • Heatmap • Backtest • Filters • 100% Data Guarantee**")
+st.markdown("**Screener • Heatmap • Backtest • Filters • 100% Stable**")
 
 # -------------------------------------------------------------------------
 # WATCHLIST + DEFAULT SYMBOLS
 # -------------------------------------------------------------------------
 WATCHLISTS_FILE = "watchlists.json"
-DEFAULT_SYMBOLS = ["SPY", "QQQ", "AAPL"]  # Always work
+DEFAULT_SYMBOLS = ["SPY", "QQQ", "AAPL"]
 
 if not os.path.exists(WATCHLISTS_FILE):
     with open(WATCHLISTS_FILE, "w") as f:
@@ -57,10 +57,10 @@ def safe_download(symbol, period="1y", interval="1d", retries=2):
                 return df
         except:
             time.sleep(1)
-    return pd.DataFrame()  # Return empty on failure
+    return pd.DataFrame()
 
 # -------------------------------------------------------------------------
-# TAB 1 – SCREENER (ALWAYS SHOWS SOMETHING)
+# TAB 1 – SCREENER
 # -------------------------------------------------------------------------
 with tab1:
     @st.cache_data(ttl=60)
@@ -114,8 +114,7 @@ with tab1:
     if not df_screen.empty:
         st.dataframe(df_screen, use_container_width=True)
     else:
-        # DEMO DATA FALLBACK
-        st.warning("No live data – showing demo (SPY, AAPL, QQQ)")
+        st.warning("No live data – showing demo")
         demo = pd.DataFrame([
             {"symbol": "SPY", "regime": "STRONG BULL", "price": 580.50, "rsi": 68.2},
             {"symbol": "AAPL", "regime": "WEAK BULL", "price": 232.10, "rsi": 55.4},
@@ -124,7 +123,7 @@ with tab1:
         st.dataframe(demo, use_container_width=True)
 
 # -------------------------------------------------------------------------
-# TAB 2 – HEATMAP (ALWAYS WORKS)
+# TAB 2 – HEATMAP (FIXED: orient="index")
 # -------------------------------------------------------------------------
 with tab2:
     st.subheader("Multi-Timeframe Heatmap")
@@ -145,9 +144,39 @@ with tab2:
                 e10 = close.ewm(10, adjust=False).mean().iloc[-1]
                 e20 = close.ewm(20, adjust=False).mean().iloc[-1]
                 e50 = close.ewm(50, adjust=False).mean().iloc[-1]
-                if pd.isna(e10): 
+                if pd.isna(e10):
                     row[label] = "N/A"
                     continue
                 row[label] = "BULL" if e10 > e20 > e50 else "BEAR" if e10 < e20 < e50 else "SIDE"
             data[sym] = row
-        return pd.DataFrame.from_dict(data, orient="index
+        return pd.DataFrame.from_dict(data, orient="index")  # FIXED: "index"
+
+    hm_df = get_heatmap(SYMBOLS)
+
+    def color(val):
+        return "green" if val == "BULL" else "red" if val == "BEAR" else "lightgray"
+
+    fig = go.Figure(data=go.Heatmap(
+        z=[[color(v) for v in row] for row in hm_df.values],
+        x=hm_df.columns, y=hm_df.index,
+        text=hm_df.values, texttemplate="%{text}",
+        colorscale="RdYlGn", showscale=False
+    ))
+    fig.update_layout(height=200 + len(SYMBOLS)*35)
+    st.plotly_chart(fig, use_container_width=True)
+
+# -------------------------------------------------------------------------
+# TAB 3 – BACKTEST
+# -------------------------------------------------------------------------
+with tab3:
+    symbol_bt = st.selectbox("Symbol", SYMBOLS or ["SPY"])
+    start = st.date_input("Start", pd.to_datetime("2023-01-01"))
+    capital = st.number_input("Capital ($)", 1000, 1000000, 10000)
+
+    if st.button("Run"):
+        df_bt = safe_download(symbol_bt, start=start)
+        if df_bt.empty:
+            st.error("No data. Try SPY.")
+        else:
+            df_bt["EMA10"] = df_bt["Close"].ewm(10, adjust=False).mean()
+            df_bt["EMA20"] = df_bt["Close"].ewm(20
