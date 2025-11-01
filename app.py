@@ -168,8 +168,9 @@ with tab1:
             "BEAR": 5,
             "STRONG BEAR": 6
         }
-        df['regime_sort'] = df['regime'].map(regime_order).fillna(3)  # Fallback to neutral for unknown regimes
-        df = df.sort_values('regime_sort').drop('regime_sort', axis=1)
+        if not df.empty:
+            df['regime_sort'] = df['regime'].map(regime_order).fillna(3)  # Fallback to neutral for unknown regimes
+            df = df.sort_values('regime_sort').drop('regime_sort', axis=1)
         return df
 
     df_screen = screen_symbols(SYMBOLS)
