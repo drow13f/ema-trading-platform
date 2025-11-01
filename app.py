@@ -81,4 +81,77 @@ with tab1:
             close = df["Close"]
             ema10 = close.ewm(span=10, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
-            ema50 = close
+            ema50 = close.ewm(span=50, adjust=False).mean()  # FIXED: completed line
+            rsi_val = RSIIndicator(close).rsi().iloc[-1]
+
+            e10 = ema10.iloc[-1]
+            e20 = ema20.iloc[-1]
+            e50 = ema50.iloc[-1]
+
+            if pd.isna(e10) or pd.isna(e20) or pd.isna(e50):
+                return None
+
+            regime = (
+                "STRONG BULL" if e10 > e20 > e50 else
+                "WEAK BULL" if e10 > e20 else
+                "STRONG BEAR" if e10 < e20 < e50 else
+                "WEAK BEAR" if e10 < e20 else
+                "SIDEWAYS"
+            )
+
+            return {
+                "symbol": sym,
+                "regime": regime,
+                "price": round(close.iloc[-1], 2),
+                "rsi": round(rsi_val, 1) if not pd.isna(rsi_val) else "N/A",
+            }
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            futures = [ex.submit(compute, sym) for sym in symbols]
+            for f in as_completed(futures):
+                r = f.result()
+                if r:
+                    results.append(r)
+
+        return pd.DataFrame(results) if results else pd.DataFrame()
+
+    df_screen = screen_symbols(SYMBOLS)
+
+    if not df_screen.empty:
+        st.dataframe(df_screen, use_container_width=True)
+    else:
+        st.warning("No live data – showing demo")
+        demo = pd.DataFrame([
+            {"symbol": "SPY", "regime": "STRONG BULL", "price": 580.50, "rsi": 68.2},
+            {"symbol": "AAPL", "regime": "WEAK BULL", "price": 232.10, "rsi": 55.4},
+            {"symbol": "QQQ", "regime": "STRONG BULL", "price": 495.30, "rsi": 70.1},
+        ])
+        st.dataframe(demo, use_container_width=True)
+
+# -------------------------------------------------------------------------
+# TAB 2 – HEATMAP
+# -------------------------------------------------------------------------
+with tab2:
+    st.subheader("Multi-Timeframe Heatmap")
+
+    @st.cache_data(ttl=300)
+    def get_heatmap(symbols):
+        tfs = {"1d": ("2y", "1d"), "1wk": ("10y", "1wk")}
+        data = {}
+
+        for sym in symbols:
+            row = {}
+            for label, (p, i) in tfs.items():
+                df = safe_download(sym, period=p, interval=i)
+                if df.empty:
+                    row[label] = "N/A"
+                    continue
+                close = df["Close"]
+                e10 = close.ewm(span=10, adjust=False).mean().iloc[-1]
+                e20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
+                e50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+                if pd.isna(e10):
+                    row[label] = "N/A"
+                    continue
+                row[label] = "BULL" if e10 > e20 > e50 else "BEAR" if e10 < e20 < e50 else "SIDE"
+            data[sym] = row
