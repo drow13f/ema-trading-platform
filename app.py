@@ -9,17 +9,21 @@ import os
 import time
 
 # =============================================================================
-# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – WITH REGIME BUTTONS
+# EMA BULL/BEAR RESEARCH & TRADING PLATFORM – REGIME-BASED SORTING
 # =============================================================================
+# Research Date: October 31, 2025
+# Features: Regime sorting/filtering with EMA, RSI, rel_vol conditions
+# GitHub-ready: Clean, commented, stable
+
 st.set_page_config(page_title="EMA Platform", layout="wide")
 st.title("EMA Bull/Bear Research & Trading Platform")
-st.markdown("**Screener • Heatmap • Backtest • Filters • Regime Buttons**")
+st.markdown("**Screener • Heatmap • Backtest • Filters • Regime Sorting**")
 
 # -------------------------------------------------------------------------
-# WATCHLIST
+# WATCHLIST MANAGEMENT
 # -------------------------------------------------------------------------
 WATCHLISTS_FILE = "watchlists.json"
-DEFAULT_SYMBOLS = ["SPY", "QQQ", "AAPL"]
+DEFAULT_SYMBOLS = ["SPY", "QQQ", "AAPL", "TSLA", "BTC-USD"]
 
 if not os.path.exists(WATCHLISTS_FILE):
     with open(WATCHLISTS_FILE, "w") as f:
@@ -30,9 +34,9 @@ with open(WATCHLISTS_FILE) as f:
 
 SYMBOLS = watchlists.get("default", DEFAULT_SYMBOLS)
 
-# Sidebar – Watchlist + Regime Buttons
+# Sidebar – Watchlist Editor + Regime Buttons
 st.sidebar.header("Watchlist")
-new_symbols = st.sidebar.text_area("Edit (comma)", ", ".join(SYMBOLS), height=100)
+new_symbols = st.sidebar.text_area("Edit (comma-separated)", ", ".join(SYMBOLS), height=100)
 if st.sidebar.button("Save Watchlist"):
     watchlists["default"] = [s.strip().upper() for s in new_symbols.split(",") if s.strip()]
     with open(WATCHLISTS_FILE, "w") as f:
@@ -40,8 +44,8 @@ if st.sidebar.button("Save Watchlist"):
     st.sidebar.success("Saved!")
     st.rerun()
 
-st.sidebar.header("Regime Filters")
-# Regime buttons (color-coded with markdown)
+st.sidebar.header("Regime Sort/Filter")
+# Buttons to filter screener by regime
 if st.sidebar.button("🟢 Strong Bull"):
     st.session_state.regime_filter = "STRONG BULL"
 if st.sidebar.button("🟡 Bull"):
@@ -60,12 +64,12 @@ if st.sidebar.button("❌ Clear Filter"):
     st.session_state.regime_filter = None
 
 # -------------------------------------------------------------------------
-# TABS
+# TABS FOR PLATFORM FEATURES
 # -------------------------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs(["Screener", "Heatmap", "Backtest", "Filters"])
 
 # -------------------------------------------------------------------------
-# SAFE YFINANCE (retry + fallback)
+# SAFE DATA DOWNLOAD (retry logic for stability)
 # -------------------------------------------------------------------------
 def safe_download(symbol, period="1y", interval="1d", retries=2):
     for _ in range(retries):
@@ -85,7 +89,7 @@ def safe_download(symbol, period="1y", interval="1d", retries=2):
     return pd.DataFrame()
 
 # -------------------------------------------------------------------------
-# TAB 1 – SCREENER (with regime filter from buttons)
+# TAB 1 – SCREENER (regime sorting + filtering)
 # -------------------------------------------------------------------------
 with tab1:
     @st.cache_data(ttl=60)
@@ -98,41 +102,75 @@ with tab1:
                 return None
 
             close = df["Close"]
+            volume = df["Volume"]
             ema10 = close.ewm(span=10, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             ema50 = close.ewm(span=50, adjust=False).mean()
             rsi_val = RSIIndicator(close).rsi().iloc[-1]
 
+            price = close.iloc[-1]
             e10 = ema10.iloc[-1]
             e20 = ema20.iloc[-1]
             e50 = ema50.iloc[-1]
+            avg_vol = volume.rolling(20).mean().iloc[-1]
+            rel_vol = volume.iloc[-1] / avg_vol if avg_vol > 0 else 0
 
-            if pd.isna(e10) or pd.isna(e20) or pd.isna(e50):
+            if pd.isna(e10) or pd.isna(e20) or pd.isna(e50) or pd.isna(rsi_val):
                 return None
 
-            regime = (
-                "STRONG BULL" if e10 > e20 > e50 else
-                "WEAK BULL" if e10 > e20 else
-                "STRONG BEAR" if e10 < e20 < e50 else
-                "WEAK BEAR" if e10 < e20 else
-                "SIDEWAYS"
-            )
+            bull_stack = price > e10 > e20 > e50
+            bear_stack = price < e10 < e20 < e50
+
+            if bull_stack:
+                if rsi_val > 70 and rel_vol > 3:
+                    regime = "STRONG BULL"
+                elif rsi_val > 60 and rel_vol > 2:
+                    regime = "BULL"
+                elif rsi_val > 50 and 1 <= rel_vol <= 2:
+                    regime = "WEAK BULL"
+                else:
+                    regime = "NEUTRAL/ALERT"
+            elif bear_stack:
+                if rsi_val < 30 and rel_vol > 3:
+                    regime = "STRONG BEAR"
+                elif rsi_val < 40 and rel_vol > 2:
+                    regime = "BEAR"
+                elif rsi_val < 50 and 1 < rel_vol <= 2:
+                    regime = "WEAK BEAR"
+                else:
+                    regime = "NEUTRAL/ALERT"
+            else:
+                regime = "NEUTRAL/ALERT"
 
             return {
                 "symbol": sym,
                 "regime": regime,
-                "price": round(close.iloc[-1], 2),
-                "rsi": round(rsi_val, 1) if not pd.isna(rsi_val) else "N/A",
+                "price": round(price, 2),
+                "rsi": round(rsi_val, 1),
+                "rel_vol": round(rel_vol, 2),
             }
 
         with ThreadPoolExecutor(max_workers=5) as ex:
-            futures = [ex.submit(compute, sym) for sym in symbols]
+            futures = [ex.submit(compute, sym) for sym in SYMBOLS]
             for f in as_completed(futures):
                 r = f.result()
                 if r:
                     results.append(r)
 
-        return pd.DataFrame(results) if results else pd.DataFrame()
+        df = pd.DataFrame(results) if results else pd.DataFrame()
+        # Sort by regime order
+        regime_order = {
+            "STRONG BULL": 0,
+            "BULL": 1,
+            "WEAK BULL": 2,
+            "NEUTRAL/ALERT": 3,
+            "WEAK BEAR": 4,
+            "BEAR": 5,
+            "STRONG BEAR": 6
+        }
+        df['regime_sort'] = df['regime'].map(regime_order)
+        df = df.sort_values('regime_sort').drop('regime_sort', axis=1)
+        return df
 
     df_screen = screen_symbols(SYMBOLS)
 
@@ -145,9 +183,9 @@ with tab1:
     else:
         st.warning("No live data – showing demo")
         demo = pd.DataFrame([
-            {"symbol": "SPY", "regime": "STRONG BULL", "price": 580.50, "rsi": 68.2},
-            {"symbol": "AAPL", "regime": "WEAK BULL", "price": 232.10, "rsi": 55.4},
-            {"symbol": "QQQ", "regime": "STRONG BULL", "price": 495.30, "rsi": 70.1},
+            {"symbol": "SPY", "regime": "STRONG BULL", "price": 580.50, "rsi": 68.2, "rel_vol": 3.5},
+            {"symbol": "AAPL", "regime": "WEAK BULL", "price": 232.10, "rsi": 55.4, "rel_vol": 1.5},
+            {"symbol": "QQQ", "regime": "BULL", "price": 495.30, "rsi": 70.1, "rel_vol": 2.2},
         ])
         st.dataframe(demo, use_container_width=True)
 
